@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Répartition</title>
+  <meta name="theme-color" content="#0e6b63">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Répartition">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <style>
+    :root {
+      --bg: #edf0f2; --carte: #ffffff; --encre: #14202b; --discret: #6b7782;
+      --trait: #d6dce1; --accent: #0e6b63; --reste: #b8860b; --erreur: #b3261e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101820; --carte: #18222c; --encre: #e8eef2; --discret: #8a98a4;
+        --trait: #2a3844; --accent: #4fc3b4; --reste: #e0b44c; --erreur: #ff8a80;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+      background: var(--bg); color: var(--encre);
+      font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    main { max-width: 480px; margin: 0 auto; }
+    label { display: block; color: var(--discret); font-size: 15px; margin-bottom: 4px; }
+    .saisie { display: flex; align-items: baseline; gap: 8px; border-bottom: 2px solid var(--accent); }
+    #montant {
+      width: 100%; border: 0; background: transparent; color: var(--encre);
+      font: inherit; font-size: 56px; font-weight: 600; padding: 0; outline: none;
+    }
+    .saisie span { font-size: 32px; color: var(--discret); }
+    #barre { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 28px 0 8px; background: var(--trait); }
+    #barre i { display: block; }
+    #resume { color: var(--discret); font-size: 14px; margin: 0 0 20px; }
+    .carte { background: var(--carte); border-radius: 16px; padding: 4px 16px; margin-bottom: 16px; }
+    .ligne { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--trait); }
+    .ligne:last-child { border-bottom: 0; }
+    .nom small { display: block; color: var(--discret); font-size: 13px; }
+    .ligne b { font-size: 20px; font-weight: 600; }
+    .carte.reste .ligne b { color: var(--reste); }
+  </style>
+</head>
+<body>
+  <main>
+    <label for="montant">Montant reçu</label>
+    <div class="saisie">
+      <input id="montant" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
+      <span>€</span>
+    </div>
+    <div id="barre"></div>
+    <p id="resume"></p>
+    <div id="sortie"></div>
+  </main>
+
+  <script>
+    // --- Ton budget ---
+    const config = {
+      pctInvesti: 50,                              // part investie, en %
+      comptes: ['Crypto', 'ETF', 'Épargne'],       // parts égales, virements en euros ronds
+      compteReste: 'Compte courant Pro',           // garde le reste (50 % + arrondis + centimes)
+    };
+
+    // --- Moteur (tout en centimes entiers) ---
+    function calculer(total) {
+      const n = config.comptes.length;
+      // part investie par compte, arrondie à l'euro inférieur
+      const euros = Math.floor((total * config.pctInvesti) / (10000 * n));
+      const virements = config.comptes.map(nom => ({ nom, centimes: euros * 100 }));
+      const reste = total - euros * 100 * n;       // tout ce qui n'est pas viré
+      return { virements, reste };
+    }
+
+    // --- Affichage ---
+    const euro = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+    const fmt = c => euro.format(c / 100);
+    const champ = document.getElementById('montant');
+    const sortie = document.getElementById('sortie');
+    const barre = document.getElementById('barre');
+    const resume = document.getElementById('resume');
+
+    function carte(nom, sous, centimes, classe = '') {
+      return `<div class="carte ${classe}"><div class="ligne"><span class="nom">${nom}${sous ? `<small>${sous}</small>` : ''}</span><b>${fmt(centimes)}</b></div></div>`;
+    }
+
+    function afficher() {
+      // Le clavier iPhone français donne une virgule : on la convertit
+      const valeur = parseFloat(champ.value.replace(',', '.'));
+      sortie.innerHTML = ''; barre.innerHTML = ''; resume.textContent = '';
+      if (!(valeur > 0)) return;
+
+      const total = Math.round(valeur * 100);
+      const { virements, reste } = calculer(total);
+
+      virements.forEach((v, i) => {
+        sortie.insertAdjacentHTML('beforeend', carte(v.nom, '', v.centimes));
+        if (v.centimes > 0) barre.insertAdjacentHTML('beforeend',
+          `<i style="flex:${v.centimes};background:var(--accent);opacity:${1 - i * 0.25}"></i>`);
+      });
+      sortie.insertAdjacentHTML('beforeend', carte(config.compteReste, 'reste sur le compte', reste, 'reste'));
+      barre.insertAdjacentHTML('beforeend',
+        `<i style="flex:${reste};background:var(--discret);opacity:.45"></i>`);
+
+      const vire = virements.reduce((s, v) => s + v.centimes, 0);
+      resume.textContent = `Virements ${fmt(vire)} + reste ${fmt(reste)} = ${fmt(vire + reste)}`;
+    }
+
+    // --- Stockage ---
+    try { champ.value = localStorage.getItem('montant') || ''; } catch (e) {}
+    champ.addEventListener('input', () => {
+      try { localStorage.setItem('montant', champ.value); } catch (e) {}
+      afficher();
+    });
+    afficher();
+  </script>
+</body>
+</html>
